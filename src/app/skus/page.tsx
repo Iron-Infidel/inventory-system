@@ -44,28 +44,26 @@ export default async function SkusPage() {
   const products = (data ?? []) as unknown as Product[]
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="h-screen flex flex-col overflow-hidden">
       <Nav current="/skus" />
-      <main className="flex-1 p-6">
-        <div className="max-w-screen-2xl mx-auto">
-          <div className="mb-5">
-            <h1 className="text-2xl font-bold">SKU Management</h1>
-            <p className="text-gray-400 text-sm mt-1">
-              {products.length} products loaded · Click any highlighted cell to edit
+      <main className="flex-1 min-h-0 flex flex-col px-6 pt-5 pb-4 gap-4 overflow-hidden">
+        <div className="shrink-0">
+          <h1 className="text-2xl font-bold">SKU Management</h1>
+          <p className="text-gray-400 text-sm mt-1">
+            {products.length} products loaded · Click any cell in the last 6 columns to edit
+          </p>
+        </div>
+        {products.length === 0 ? (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
+            <p className="text-gray-400 font-medium">No products in database yet.</p>
+            <p className="text-gray-600 text-sm mt-2">
+              Run <code className="text-gray-400">migrations/001_add_sku_fields.sql</code> then{' '}
+              <code className="text-gray-400">seed.sql</code> in your Supabase SQL Editor.
             </p>
           </div>
-          {products.length === 0 ? (
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
-              <p className="text-gray-400 font-medium">No products in database yet.</p>
-              <p className="text-gray-600 text-sm mt-2">
-                Run <code className="text-gray-400">migrations/001_add_sku_fields.sql</code> then{' '}
-                <code className="text-gray-400">seed.sql</code> in your Supabase SQL Editor.
-              </p>
-            </div>
-          ) : (
-            <SkuTable initialProducts={products} />
-          )}
-        </div>
+        ) : (
+          <SkuTable initialProducts={products} />
+        )}
       </main>
     </div>
   )

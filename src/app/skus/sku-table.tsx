@@ -329,7 +329,7 @@ export default function SkuTable({ initialProducts }: { initialProducts: Product
     activeFilter !== 'active' || hasGapsOnly
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col flex-1 min-h-0 gap-4">
 
       {/* ── Filter bar ──────────────────────────────────────────────── */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
@@ -426,7 +426,7 @@ export default function SkuTable({ initialProducts }: { initialProducts: Product
       </div>
 
       {/* ── Table ───────────────────────────────────────────────────── */}
-      <div className="overflow-x-scroll rounded-xl border border-gray-200 bg-white shadow-sm [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-400 [&::-webkit-scrollbar-thumb]:rounded-full">
+      <div className="flex-1 min-h-0 overflow-x-scroll overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-sm [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-400 [&::-webkit-scrollbar-thumb]:rounded-full">
         <table className="w-full text-sm border-collapse font-mono">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
