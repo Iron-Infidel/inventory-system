@@ -38,6 +38,45 @@ type SortField =
   | 'sales_pct' | 'units_per_carton' | 'cbm_per_carton' | 'moq' | 'low_stock_threshold'
 type SortDir = 'asc' | 'desc'
 
+// ─── Column config ────────────────────────────────────────────────────────────
+
+const DEFAULT_COL_WIDTHS: Record<string, number> = {
+  name:               200,
+  product_line:       170,
+  asin:               115,
+  fba_sku:             88,
+  g10_sku:             88,
+  shopify_sku:         88,
+  primary_mfr:         95,
+  primary_mfr_sku:    148,
+  patch_sku:          148,
+  sales_pct:           72,
+  units_per_carton:    84,
+  cbm_per_carton:      84,
+  moq:                 60,
+  low_stock_threshold: 84,
+  active:              62,
+}
+
+// ─── Product name formatter ───────────────────────────────────────────────────
+// Turns "128oz Battle Bottle - Betsy" → "128oz Betsy Battle Bottle"
+
+function formatProductName(name: string): string {
+  if (!name.includes(' - ')) return name
+  const lastDash = name.lastIndexOf(' - ')
+  const base    = name.slice(0, lastDash)   // e.g. "128oz Battle Bottle"
+  const variant = name.slice(lastDash + 3)  // e.g. "Betsy"
+
+  // If the base starts with a size token like "64oz " or "128oz "
+  const sizeMatch = base.match(/^(\d+oz\s)(.+)$/)
+  if (sizeMatch) {
+    // "128oz " + "Betsy " + "Battle Bottle"
+    return `${sizeMatch[1]}${variant} ${sizeMatch[2]}`
+  }
+  // No leading size token — put variant first
+  return `${variant} ${base}`
+}
+
 // ─── Editable cell ────────────────────────────────────────────────────────────
 
 function EditableCell({
@@ -107,7 +146,7 @@ function EditableCell({
         }}
         className={`
           px-2 py-1 rounded text-sm bg-white border border-blue-400
-          outline-none w-full min-w-[60px] text-gray-900
+          outline-none w-full min-w-[40px] text-gray-900
           ${align === 'right' ? 'text-right' : 'text-left'}
         `}
       />
@@ -118,7 +157,7 @@ function EditableCell({
     <div
       onClick={startEdit}
       className={`
-        px-2 py-1 rounded text-sm cursor-text min-w-[60px] select-none transition-colors
+        px-2 py-1 rounded text-sm cursor-text min-w-[40px] select-none transition-colors
         ${align === 'right' ? 'text-right' : 'text-left'}
         ${saving ? 'text-yellow-600' : ''}
         ${saved   ? 'text-green-700 bg-green-50' : ''}
@@ -136,7 +175,7 @@ function EditableCell({
   )
 }
 
-// ─── Active toggle (fixed, last column) ──────────────────────────────────────
+// ─── Active toggle ────────────────────────────────────────────────────────────
 
 function ActiveToggle({
   productId,
@@ -184,40 +223,82 @@ function SortIcon({ field, current, dir }: { field: SortField; current: SortFiel
   return <span className="text-blue-500 ml-1">{dir === 'asc' ? '↑' : '↓'}</span>
 }
 
-// ─── Sortable header cell ─────────────────────────────────────────────────────
+// ─── Resizable header cells ───────────────────────────────────────────────────
+
+type ResizeHandler = (colKey: string, startX: number, startWidth: number) => void
+
+function ResizeHandle({
+  colKey,
+  width,
+  onResizeStart,
+}: {
+  colKey: string
+  width: number
+  onResizeStart: ResizeHandler
+}) {
+  return (
+    <div
+      className="absolute right-0 top-0 h-full w-2 cursor-col-resize z-10 hover:bg-blue-400/40 active:bg-blue-500/60 transition-colors"
+      onMouseDown={e => {
+        e.preventDefault()
+        e.stopPropagation()
+        onResizeStart(colKey, e.clientX, width)
+      }}
+      onClick={e => e.stopPropagation()}
+    />
+  )
+}
 
 function SortableTh({
-  field, label, sortField, sortDir, onSort, right,
+  field, colKey, label, sortField, sortDir, onSort, right, width, onResizeStart,
 }: {
   field: SortField
+  colKey: string
   label: string
   sortField: SortField
   sortDir: SortDir
   onSort: (f: SortField) => void
   right?: boolean
+  width: number
+  onResizeStart: ResizeHandler
 }) {
   return (
     <th
       onClick={() => onSort(field)}
+      style={{ width: width, minWidth: width }}
       className={`
-        px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide
+        relative px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide
         whitespace-nowrap cursor-pointer select-none hover:text-gray-800 transition-colors
         ${right ? 'text-right' : 'text-left'}
       `}
     >
       {label}
       <SortIcon field={field} current={sortField} dir={sortDir} />
+      <ResizeHandle colKey={colKey} width={width} onResizeStart={onResizeStart} />
     </th>
   )
 }
 
-function StaticTh({ children, right }: { children: React.ReactNode; right?: boolean }) {
+function StaticTh({
+  children, right, colKey, width, onResizeStart,
+}: {
+  children: React.ReactNode
+  right?: boolean
+  colKey: string
+  width: number
+  onResizeStart: ResizeHandler
+}) {
   return (
-    <th className={`
-      px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap
-      ${right ? 'text-right' : 'text-left'}
-    `}>
+    <th
+      style={{ width: width, minWidth: width }}
+      className={`
+        relative px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide
+        whitespace-nowrap select-none
+        ${right ? 'text-right' : 'text-left'}
+      `}
+    >
       {children}
+      <ResizeHandle colKey={colKey} width={width} onResizeStart={onResizeStart} />
     </th>
   )
 }
@@ -233,6 +314,24 @@ export default function SkuTable({ initialProducts }: { initialProducts: Product
   const [hasGapsOnly, setHasGapsOnly]   = useState(false)
   const [sortField, setSortField]   = useState<SortField>('product_line')
   const [sortDir, setSortDir]       = useState<SortDir>('asc')
+  const [colWidths, setColWidths]   = useState<Record<string, number>>(DEFAULT_COL_WIDTHS)
+
+  // Column resize drag logic
+  const handleResizeStart = useCallback((colKey: string, startX: number, startWidth: number) => {
+    const onMouseMove = (e: MouseEvent) => {
+      const delta = e.clientX - startX
+      setColWidths(prev => ({
+        ...prev,
+        [colKey]: Math.max(48, startWidth + delta),
+      }))
+    }
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+    }
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [])
 
   // Derived filter options
   const productLines = Array.from(new Set(initialProducts.map(p => p.product_line))).sort()
@@ -328,11 +427,17 @@ export default function SkuTable({ initialProducts }: { initialProducts: Product
   const hasActiveFilters = search || lineFilter || mfrFilter ||
     activeFilter !== 'active' || hasGapsOnly
 
+  // Total table width for layout
+  const tableWidth = Object.values(colWidths).reduce((a, b) => a + b, 0)
+
+  const thProps = { onResizeStart: handleResizeStart }
+  const sortProps = { sortField, sortDir, onSort: handleSort }
+
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-4">
 
       {/* ── Filter bar ──────────────────────────────────────────────── */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 shrink-0">
         <div className="flex flex-wrap gap-3 items-end">
 
           {/* Search */}
@@ -393,7 +498,7 @@ export default function SkuTable({ initialProducts }: { initialProducts: Product
             </div>
           </div>
 
-          {/* Has gaps (missing case pack / CBM) */}
+          {/* Has gaps */}
           <div className="flex flex-col gap-1">
             <label className="text-xs text-gray-400 font-medium">Data gaps</label>
             <button
@@ -427,24 +532,27 @@ export default function SkuTable({ initialProducts }: { initialProducts: Product
 
       {/* ── Table ───────────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 overflow-x-scroll overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-sm [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-400 [&::-webkit-scrollbar-thumb]:rounded-full">
-        <table className="w-full text-sm border-collapse font-mono">
+        <table
+          className="text-sm border-collapse font-mono"
+          style={{ width: tableWidth, tableLayout: 'fixed' }}
+        >
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              <SortableTh field="name"               label="Product"           sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-              <SortableTh field="product_line"        label="Product Line"      sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-              <SortableTh field="asin"               label="ASIN"              sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-              <SortableTh field="fba_sku"            label="FBA SKU"           sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-              <SortableTh field="g10_sku"            label="G10 SKU"           sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-              <SortableTh field="shopify_sku"        label="Shopify SKU"       sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-              <StaticTh>Primary MNFR</StaticTh>
-              <StaticTh>Primary MNFR SKU</StaticTh>
-              <StaticTh>Patch SKU</StaticTh>
-              <SortableTh field="sales_pct"          label="Sales %"           sortField={sortField} sortDir={sortDir} onSort={handleSort} right />
-              <SortableTh field="units_per_carton"   label="Units/Ctn"         sortField={sortField} sortDir={sortDir} onSort={handleSort} right />
-              <SortableTh field="cbm_per_carton"     label="CBM/Ctn"           sortField={sortField} sortDir={sortDir} onSort={handleSort} right />
-              <SortableTh field="moq"                label="MOQ"               sortField={sortField} sortDir={sortDir} onSort={handleSort} right />
-              <SortableTh field="low_stock_threshold" label="Low Stock"        sortField={sortField} sortDir={sortDir} onSort={handleSort} right />
-              <StaticTh>Active</StaticTh>
+              <SortableTh field="name"                colKey="name"                label="Product"      width={colWidths.name}                {...thProps} {...sortProps} />
+              <SortableTh field="product_line"        colKey="product_line"        label="Product Line" width={colWidths.product_line}        {...thProps} {...sortProps} />
+              <SortableTh field="asin"                colKey="asin"                label="ASIN"         width={colWidths.asin}                {...thProps} {...sortProps} />
+              <SortableTh field="fba_sku"             colKey="fba_sku"             label="FBA SKU"      width={colWidths.fba_sku}             {...thProps} {...sortProps} />
+              <SortableTh field="g10_sku"             colKey="g10_sku"             label="G10 SKU"      width={colWidths.g10_sku}             {...thProps} {...sortProps} />
+              <SortableTh field="shopify_sku"         colKey="shopify_sku"         label="Shopify SKU"  width={colWidths.shopify_sku}         {...thProps} {...sortProps} />
+              <StaticTh   colKey="primary_mfr"        width={colWidths.primary_mfr}        {...thProps}>Primary MNFR</StaticTh>
+              <StaticTh   colKey="primary_mfr_sku"    width={colWidths.primary_mfr_sku}    {...thProps}>Primary MNFR SKU</StaticTh>
+              <StaticTh   colKey="patch_sku"          width={colWidths.patch_sku}          {...thProps}>Patch SKU</StaticTh>
+              <SortableTh field="sales_pct"           colKey="sales_pct"           label="Sales %"      width={colWidths.sales_pct}           {...thProps} {...sortProps} right />
+              <SortableTh field="units_per_carton"    colKey="units_per_carton"    label="Units/Ctn"    width={colWidths.units_per_carton}    {...thProps} {...sortProps} right />
+              <SortableTh field="cbm_per_carton"      colKey="cbm_per_carton"      label="CBM/Ctn"      width={colWidths.cbm_per_carton}      {...thProps} {...sortProps} right />
+              <SortableTh field="moq"                 colKey="moq"                 label="MOQ"          width={colWidths.moq}                 {...thProps} {...sortProps} right />
+              <SortableTh field="low_stock_threshold" colKey="low_stock_threshold" label="Low Stock"    width={colWidths.low_stock_threshold} {...thProps} {...sortProps} right />
+              <StaticTh   colKey="active"             width={colWidths.active}             {...thProps}>Active</StaticTh>
             </tr>
           </thead>
           <tbody>
@@ -472,29 +580,44 @@ export default function SkuTable({ initialProducts }: { initialProducts: Product
                     ${!p.is_active ? 'opacity-40' : 'hover:bg-blue-50/30'}
                   `}
                 >
-                  {/* Product name */}
-                  <td className="px-3 py-2 text-gray-900 font-medium max-w-[200px]">
-                    <span className="block truncate" title={p.name}>{p.name}</span>
+                  {/* Product name — reformatted */}
+                  <td className="px-3 py-2 text-gray-900 font-medium overflow-hidden">
+                    <span
+                      className="block truncate"
+                      title={`${formatProductName(p.name)} (${p.name})`}
+                    >
+                      {formatProductName(p.name)}
+                    </span>
                   </td>
 
                   {/* Product line */}
-                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{p.product_line}</td>
+                  <td className="px-3 py-2 text-gray-600 overflow-hidden">
+                    <span className="block truncate">{p.product_line}</span>
+                  </td>
 
                   {/* ASIN */}
-                  <td className="px-3 py-2 text-gray-500 text-xs whitespace-nowrap">{p.asin}</td>
+                  <td className="px-3 py-2 text-gray-500 text-xs overflow-hidden">
+                    <span className="block truncate">{p.asin}</span>
+                  </td>
 
                   {/* FBA SKU */}
-                  <td className="px-3 py-2 text-gray-500 text-xs whitespace-nowrap">{p.fba_sku ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-500 text-xs overflow-hidden">
+                    <span className="block truncate">{p.fba_sku ?? '—'}</span>
+                  </td>
 
                   {/* G10 SKU */}
-                  <td className="px-3 py-2 text-gray-500 text-xs whitespace-nowrap">{p.g10_sku ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-500 text-xs overflow-hidden">
+                    <span className="block truncate">{p.g10_sku ?? '—'}</span>
+                  </td>
 
                   {/* Shopify SKU */}
-                  <td className="px-3 py-2 text-gray-500 text-xs whitespace-nowrap">{p.shopify_sku ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-500 text-xs overflow-hidden">
+                    <span className="block truncate">{p.shopify_sku ?? '—'}</span>
+                  </td>
 
                   {/* Primary MNFR name */}
-                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap text-xs">
-                    {primaryMfr?.manufacturer.name ?? '—'}
+                  <td className="px-3 py-2 text-gray-600 text-xs overflow-hidden">
+                    <span className="block truncate">{primaryMfr?.manufacturer.name ?? '—'}</span>
                   </td>
 
                   {/* Primary MNFR SKU — editable */}
@@ -512,31 +635,31 @@ export default function SkuTable({ initialProducts }: { initialProducts: Product
                   </td>
 
                   {/* Sales % */}
-                  <td className="px-1 py-1 w-20">
+                  <td className="px-1 py-1">
                     <EditableCell value={p.sales_pct} onSave={makeProductUpdater(p.id, 'sales_pct')} type="number" placeholder="—" align="right" />
                   </td>
 
                   {/* Units/carton */}
-                  <td className="px-1 py-1 w-20">
+                  <td className="px-1 py-1">
                     <EditableCell value={p.units_per_carton} onSave={makeProductUpdater(p.id, 'units_per_carton')} type="number" placeholder="—" align="right" />
                   </td>
 
                   {/* CBM/carton */}
-                  <td className="px-1 py-1 w-24">
+                  <td className="px-1 py-1">
                     <EditableCell value={p.cbm_per_carton} onSave={makeProductUpdater(p.id, 'cbm_per_carton')} type="number" placeholder="—" align="right" />
                   </td>
 
                   {/* MOQ */}
-                  <td className="px-1 py-1 w-20">
+                  <td className="px-1 py-1">
                     <EditableCell value={p.moq} onSave={makeProductUpdater(p.id, 'moq')} type="number" placeholder="—" align="right" />
                   </td>
 
                   {/* Low stock */}
-                  <td className="px-1 py-1 w-24">
+                  <td className="px-1 py-1">
                     <EditableCell value={p.low_stock_threshold} onSave={makeProductUpdater(p.id, 'low_stock_threshold')} type="number" placeholder="—" align="right" />
                   </td>
 
-                  {/* Active toggle — last column */}
+                  {/* Active toggle */}
                   <td className="px-3 py-2">
                     <ActiveToggle productId={p.id} value={p.is_active} onChange={handleActiveChange} />
                   </td>
@@ -547,8 +670,8 @@ export default function SkuTable({ initialProducts }: { initialProducts: Product
         </table>
       </div>
 
-      <p className="text-gray-500 text-xs">
-        Click any cell in the last 6 columns to edit inline. Press Enter or click away to save.
+      <p className="text-gray-500 text-xs shrink-0">
+        Click any cell in the last 6 columns to edit inline. Press Enter or click away to save. Drag column borders to resize.
       </p>
     </div>
   )
