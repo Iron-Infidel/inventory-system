@@ -11,7 +11,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient }  from '@supabase/supabase-js'
-import { fetchAmazonInventory } from '@/lib/amazon/spapi'
+import { fetchAmazonInventory, type AmazonInventoryResult } from '@/lib/amazon/spapi'
 
 // Service-role Supabase client (bypasses RLS — server only)
 function adminClient() {
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
 
   try {
     // ── 1. Fetch Amazon FBA + AWD ──────────────────────────────────────────
-    const amazon = await fetchAmazonInventory()
+    const amazon: AmazonInventoryResult = await fetchAmazonInventory()
 
     // Build lookup maps: sellerSku → qty
     const fbaBySellerSku = new Map<string, number>()
@@ -95,14 +95,20 @@ export async function POST(req: Request) {
     const totalG10 = snapshots.reduce((s, r) => s + r.g10_qty, 0)
 
     return NextResponse.json({
-      ok:          true,
-      date:        today,
-      products:    snapshots.length,
+      ok:               true,
+      date:             today,
+      products:         snapshots.length,
       fba_skus_matched: fbaBySellerSku.size,
       awd_skus_matched: awdBySku.size,
       g10_skus_matched: g10ByItemId.size,
-      totals: { fba: totalFba, awd: totalAwd, g10: totalG10 },
+      totals:           { fba: totalFba, awd: totalAwd, g10: totalG10 },
       amazon_fetched_at: amazon.fetchedAt,
+      fba_raw_count:    amazon.fba.length,
+      awd_raw_count:    amazon.awd.length,
+      errors: {
+        fba: amazon.fbaError ?? null,
+        awd: amazon.awdError ?? null,
+      },
     })
 
   } catch (err) {

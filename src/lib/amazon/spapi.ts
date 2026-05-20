@@ -146,10 +146,29 @@ async function fetchAwdInventory(): Promise<AwdInventoryItem[]> {
 
 // ─── Public: fetch both ───────────────────────────────────────────────────────
 
-export async function fetchAmazonInventory(): Promise<AmazonInventory> {
-  const [fba, awd] = await Promise.all([
+export type AmazonInventoryResult = AmazonInventory & {
+  fbaError?: string
+  awdError?: string
+}
+
+export async function fetchAmazonInventory(): Promise<AmazonInventoryResult> {
+  const [fbaResult, awdResult] = await Promise.allSettled([
     fetchFbaInventory(),
     fetchAwdInventory(),
   ])
-  return { fba, awd, fetchedAt: new Date().toISOString() }
+
+  const fba = fbaResult.status === 'fulfilled' ? fbaResult.value : []
+  const awd = awdResult.status === 'fulfilled' ? awdResult.value : []
+
+  const fbaError = fbaResult.status === 'rejected'
+    ? String(fbaResult.reason)
+    : undefined
+  const awdError = awdResult.status === 'rejected'
+    ? String(awdResult.reason)
+    : undefined
+
+  if (fbaError) console.error('[spapi] FBA fetch failed:', fbaError)
+  if (awdError) console.warn('[spapi] AWD fetch failed:', awdError)
+
+  return { fba, awd, fetchedAt: new Date().toISOString(), fbaError, awdError }
 }
