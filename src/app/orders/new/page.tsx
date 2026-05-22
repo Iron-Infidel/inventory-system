@@ -57,7 +57,7 @@ export default async function NewOrderPage() {
       <main className="flex-1 px-6 py-6">
         <POForm
           manufacturers={manufacturers ?? []}
-          products={(products ?? []) as Parameters<typeof POForm>[0]['products']}
+          products={(products ?? []) as unknown as Parameters<typeof POForm>[0]['products']}
         />
       </main>
     </div>
