@@ -45,7 +45,7 @@ export async function POST(req: Request) {
     // ── 2. Load active products ───────────────────────────────────────────
     const { data: products, error: prodError } = await supabase
       .from('products')
-      .select('id, asin, g10_sku, is_active')
+      .select('id, asin, fba_sku, g10_sku, is_active')
       .eq('is_active', true)
 
     if (prodError) throw new Error(`Failed to load products: ${prodError.message}`)
@@ -66,7 +66,7 @@ export async function POST(req: Request) {
       snapshot_date: today,
       product_id:    p.id,
       fba_qty:       p.asin ? (fbaByAsin.get(p.asin) ?? 0) : 0,
-      awd_qty:       p.asin ? (awdBySku.get(p.asin) ?? 0) : 0,
+      awd_qty:       p.fba_sku ? (awdBySku.get(p.fba_sku) ?? 0) : 0,
       g10_qty:       p.g10_sku ? (g10ByItemId.get(p.g10_sku) ?? 0) : 0,
     }))
 
