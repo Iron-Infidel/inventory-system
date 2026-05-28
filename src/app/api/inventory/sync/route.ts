@@ -98,6 +98,7 @@ export async function POST(req: Request) {
         fba: amazon.fbaError ?? null,
         awd: amazon.awdError ?? null,
       },
+      _debug_awd_sample: amazon.awd.slice(0, 3),
     })
 
   } catch (err) {
