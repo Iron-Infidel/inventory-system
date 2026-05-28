@@ -39,7 +39,7 @@ export async function POST(req: Request) {
 
     const awdBySku = new Map<string, number>()
     for (const item of amazon.awd) {
-      awdBySku.set(item.sku, item.availableQuantity ?? 0)
+      awdBySku.set(item.sku, item.totalOnhandQuantity ?? 0)
     }
 
     // ── 2. Load active products ───────────────────────────────────────────
@@ -98,7 +98,6 @@ export async function POST(req: Request) {
         fba: amazon.fbaError ?? null,
         awd: amazon.awdError ?? null,
       },
-      _debug_awd_sample: amazon.awd.slice(0, 3),
     })
 
   } catch (err) {

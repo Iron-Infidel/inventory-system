@@ -78,9 +78,9 @@ async function spPost<T>(path: string, body: unknown): Promise<T> {
 export type FbaInventoryByAsin = Map<string, number>
 
 export type AwdInventoryItem = {
-  sku:                 string
-  totalOnhandQuantity: number
-  availableQuantity:   number
+  sku:                  string
+  totalOnhandQuantity:  number
+  totalInboundQuantity: number
 }
 
 export type AmazonInventoryResult = {
