@@ -165,3 +165,18 @@ create policy "authenticated_full_access" on forecasts for all to authenticated 
 create policy "authenticated_full_access" on orders for all to authenticated using (true) with check (true);
 create policy "authenticated_full_access" on order_line_items for all to authenticated using (true) with check (true);
 create policy "authenticated_full_access" on config for all to authenticated using (true) with check (true);
+
+-- ─────────────────────────────────────────────
+-- EXPLICIT DATA API GRANTS
+-- Required for Supabase projects created after May 30, 2026.
+-- GRANT is idempotent — safe on older projects too.
+-- ─────────────────────────────────────────────
+GRANT ALL ON TABLE manufacturers        TO anon, authenticated, service_role;
+GRANT ALL ON TABLE products             TO anon, authenticated, service_role;
+GRANT ALL ON TABLE manufacturer_sku_map TO anon, authenticated, service_role;
+GRANT ALL ON TABLE inventory_snapshots  TO anon, authenticated, service_role;
+GRANT ALL ON TABLE g10_latest           TO anon, authenticated, service_role;
+GRANT ALL ON TABLE forecasts            TO anon, authenticated, service_role;
+GRANT ALL ON TABLE orders               TO anon, authenticated, service_role;
+GRANT ALL ON TABLE order_line_items     TO anon, authenticated, service_role;
+GRANT ALL ON TABLE config               TO anon, authenticated, service_role;

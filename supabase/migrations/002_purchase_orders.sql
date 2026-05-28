@@ -67,3 +67,9 @@ DO $$ BEGIN
     CREATE POLICY "authenticated_full_access" ON po_line_items FOR ALL TO authenticated USING (true) WITH CHECK (true);
   END IF;
 END $$;
+
+-- ─────────────────────────────────────────────
+-- Explicit Data API grants (required post May 30, 2026)
+-- ─────────────────────────────────────────────
+GRANT ALL ON TABLE purchase_orders TO anon, authenticated, service_role;
+GRANT ALL ON TABLE po_line_items   TO anon, authenticated, service_role;
