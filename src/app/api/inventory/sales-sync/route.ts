@@ -28,15 +28,16 @@ async function fetchAmazonSalesByAsin(): Promise<Map<string, number>> {
 
   const ninetyDaysAgo = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10)
 
-  // Request flat-file orders report for last 90 days
+  // GET_SALES_AND_TRAFFIC_REPORT supports up to 2 years; gives units ordered by ASIN
   const createRes = await fetch(`${SP_API_BASE}/reports/2021-06-30/reports`, {
     method:  'POST',
     headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      reportType:     'GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL',
+      reportType:     'GET_SALES_AND_TRAFFIC_REPORT',
       marketplaceIds: [MARKETPLACE_ID],
       dataStartTime:  `${ninetyDaysAgo}T00:00:00Z`,
       dataEndTime:    new Date().toISOString(),
+      reportOptions:  { dateGranularity: 'TOTAL', asinGranularity: 'CHILD' },
     }),
   })
   if (!createRes.ok) throw new Error(`Amazon orders report create failed: ${createRes.status}`)
@@ -64,14 +65,14 @@ async function fetchAmazonSalesByAsin(): Promise<Map<string, number>> {
   const { url } = await docRes.json()
   const text    = await (await fetch(url)).text()
 
-  // Parse TSV: find asin-code and quantity-purchased columns
+  // Parse TSV: Sales & Traffic report columns include (child ASIN) and Units Ordered
   const lines   = text.split('\n').filter(Boolean)
   const headers = lines[0].split('\t').map(h => h.trim().toLowerCase())
-  const asinIdx = headers.indexOf('asin')
-  const qtyIdx  = headers.findIndex(h => h.includes('quantity-purchased') || h === 'quantity purchased')
+  const asinIdx = headers.findIndex(h => h.includes('asin') || h === '(child) asin')
+  const qtyIdx  = headers.findIndex(h => h.includes('units ordered') || h === 'units ordered - b2c')
 
   if (asinIdx === -1 || qtyIdx === -1) {
-    throw new Error(`Unexpected Amazon orders report columns: ${headers.slice(0, 10).join(', ')}`)
+    throw new Error(`Unexpected Amazon sales report columns: ${headers.slice(0, 15).join(' | ')}`)
   }
 
   const byAsin = new Map<string, number>()
@@ -99,11 +100,10 @@ async function fetchShopifySalesBySku(): Promise<Map<string, number>> {
   while (firstPage || pageInfo) {
     firstPage = false
     const params = new URLSearchParams({
-      status:           'any',
-      fulfillment_status: 'shipped,partial',
-      created_at_min:   ninetyDaysAgo,
-      limit:            '250',
-      fields:           'line_items',
+      status:         'any',
+      created_at_min: ninetyDaysAgo,
+      limit:          '250',
+      fields:         'line_items',
     })
     if (pageInfo) { params.set('page_info', pageInfo); params.delete('created_at_min') }
 
