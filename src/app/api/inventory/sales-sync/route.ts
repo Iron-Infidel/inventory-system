@@ -1,16 +1,6 @@
-/**
- * GET/POST /api/inventory/sales-sync
- *
- * Pulls last 90 days of order data from Amazon SP-API and Shopify,
- * sums units sold per SKU, and updates avg_90_day_sales on products.
- *
- * Called by Vercel Cron at midnight ET (05:00 UTC) daily.
- * Also callable manually from the browser for testing.
- */
-
-import { NextResponse }     from 'next/server'
-import { createClient }     from '@supabase/supabase-js'
-import { getAccessToken }   from '@/lib/amazon/spapi'
+import { NextResponse }   from 'next/server'
+import { createClient }   from '@supabase/supabase-js'
+import { getAccessToken } from '@/lib/amazon/spapi'
 
 function adminClient() {
   return createClient(
@@ -19,69 +9,79 @@ function adminClient() {
   )
 }
 
-// ─── Amazon: last-90-day units sold by ASIN via Orders report ────────────────
+// ─── Amazon: 3 parallel 30-day windows → units sold by ASIN ──────────────────
 
 async function fetchAmazonSalesByAsin(): Promise<Map<string, number>> {
-  const SP_API_BASE    = 'https://sellingpartnerapi-na.amazon.com'
-  const MARKETPLACE_ID = process.env.AMAZON_MARKETPLACE_ID ?? 'ATVPDKIKX0DER'
-  const token          = await getAccessToken()
+  const BASE    = 'https://sellingpartnerapi-na.amazon.com'
+  const MKT     = process.env.AMAZON_MARKETPLACE_ID ?? 'ATVPDKIKX0DER'
+  const token   = await getAccessToken()
+  const now     = Date.now()
 
-  const ninetyDaysAgo = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10)
+  // Flat-file orders report supports max 30 days — request 3 windows in parallel
+  const windows = [
+    { start: new Date(now - 90 * 86_400_000), end: new Date(now - 60 * 86_400_000) },
+    { start: new Date(now - 60 * 86_400_000), end: new Date(now - 30 * 86_400_000) },
+    { start: new Date(now - 30 * 86_400_000), end: new Date(now) },
+  ]
 
-  // GET_SALES_AND_TRAFFIC_REPORT supports up to 2 years; gives units ordered by ASIN
-  const createRes = await fetch(`${SP_API_BASE}/reports/2021-06-30/reports`, {
-    method:  'POST',
-    headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      reportType:     'GET_SALES_AND_TRAFFIC_REPORT',
-      marketplaceIds: [MARKETPLACE_ID],
-      dataStartTime:  `${ninetyDaysAgo}T00:00:00Z`,
-      dataEndTime:    new Date().toISOString(),
-      reportOptions:  { dateGranularity: 'TOTAL', asinGranularity: 'CHILD' },
-    }),
-  })
-  if (!createRes.ok) throw new Error(`Amazon orders report create failed: ${createRes.status}`)
-  const { reportId } = await createRes.json()
-
-  // Poll until done (up to 3 minutes)
-  let reportDocumentId: string | undefined
-  for (let i = 0; i < 36; i++) {
-    await new Promise(r => setTimeout(r, 5000))
-    const pollRes = await fetch(`${SP_API_BASE}/reports/2021-06-30/reports/${reportId}`, {
-      headers: { 'x-amz-access-token': token },
+  const reportIds = await Promise.all(windows.map(async (w) => {
+    const res = await fetch(`${BASE}/reports/2021-06-30/reports`, {
+      method:  'POST',
+      headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reportType:     'GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL',
+        marketplaceIds: [MKT],
+        dataStartTime:  w.start.toISOString(),
+        dataEndTime:    w.end.toISOString(),
+      }),
     })
-    const report = await pollRes.json()
-    if (report.processingStatus === 'DONE') { reportDocumentId = report.reportDocumentId; break }
-    if (report.processingStatus === 'FATAL' || report.processingStatus === 'CANCELLED') {
-      throw new Error(`Amazon orders report failed: ${report.processingStatus}`)
-    }
+    if (!res.ok) throw new Error(`Amazon report create failed: ${res.status}`)
+    return (await res.json()).reportId as string
+  }))
+
+  // Poll all 3 concurrently until done (up to 3 minutes)
+  const docIds: (string | undefined)[] = [undefined, undefined, undefined]
+  for (let attempt = 0; attempt < 36; attempt++) {
+    await new Promise(r => setTimeout(r, 5000))
+    if (docIds.every(Boolean)) break
+
+    await Promise.all(reportIds.map(async (id, i) => {
+      if (docIds[i]) return
+      const res    = await fetch(`${BASE}/reports/2021-06-30/reports/${id}`, {
+        headers: { 'x-amz-access-token': token },
+      })
+      const report = await res.json()
+      if (report.processingStatus === 'DONE')                                  docIds[i] = report.reportDocumentId
+      if (['FATAL', 'CANCELLED'].includes(report.processingStatus))
+        throw new Error(`Amazon report ${i} failed: ${report.processingStatus}`)
+    }))
   }
-  if (!reportDocumentId) throw new Error('Amazon orders report timed out')
+  if (!docIds.every(Boolean)) throw new Error('Amazon reports timed out')
 
-  // Download report
-  const docRes  = await fetch(`${SP_API_BASE}/reports/2021-06-30/documents/${reportDocumentId}`, {
-    headers: { 'x-amz-access-token': token },
-  })
-  const { url } = await docRes.json()
-  const text    = await (await fetch(url)).text()
-
-  // Parse TSV: Sales & Traffic report columns include (child ASIN) and Units Ordered
-  const lines   = text.split('\n').filter(Boolean)
-  const headers = lines[0].split('\t').map(h => h.trim().toLowerCase())
-  const asinIdx = headers.findIndex(h => h.includes('asin') || h === '(child) asin')
-  const qtyIdx  = headers.findIndex(h => h.includes('units ordered') || h === 'units ordered - b2c')
-
-  if (asinIdx === -1 || qtyIdx === -1) {
-    throw new Error(`Unexpected Amazon sales report columns: ${headers.slice(0, 15).join(' | ')}`)
-  }
-
+  // Download + parse all 3, accumulate into one map
   const byAsin = new Map<string, number>()
-  for (const line of lines.slice(1)) {
-    const cols = line.split('\t')
-    const asin = cols[asinIdx]?.trim()
-    const qty  = parseInt(cols[qtyIdx] ?? '0', 10) || 0
-    if (asin) byAsin.set(asin, (byAsin.get(asin) ?? 0) + qty)
-  }
+  await Promise.all(docIds.map(async (docId) => {
+    const { url } = await (await fetch(`${BASE}/reports/2021-06-30/documents/${docId}`, {
+      headers: { 'x-amz-access-token': token },
+    })).json()
+    const text    = await (await fetch(url)).text()
+
+    const lines   = text.split('\n').filter(Boolean)
+    const headers = lines[0].split('\t').map(h => h.trim().toLowerCase())
+    const asinIdx = headers.indexOf('asin')
+    const qtyIdx  = headers.findIndex(h => h.includes('quantity-purchased'))
+
+    if (asinIdx === -1 || qtyIdx === -1)
+      throw new Error(`Unexpected Amazon report columns: ${headers.slice(0, 12).join(' | ')}`)
+
+    for (const line of lines.slice(1)) {
+      const cols = line.split('\t')
+      const asin = cols[asinIdx]?.trim()
+      const qty  = parseInt(cols[qtyIdx] ?? '0', 10) || 0
+      if (asin) byAsin.set(asin, (byAsin.get(asin) ?? 0) + qty)
+    }
+  }))
+
   return byAsin
 }
 
@@ -99,13 +99,15 @@ async function fetchShopifySalesBySku(): Promise<Map<string, number>> {
 
   while (firstPage || pageInfo) {
     firstPage = false
-    const params = new URLSearchParams({
-      status:         'any',
-      created_at_min: ninetyDaysAgo,
-      limit:          '250',
-      fields:         'line_items',
-    })
-    if (pageInfo) { params.set('page_info', pageInfo); params.delete('created_at_min') }
+
+    // Shopify rejects extra params alongside page_info — keep them separate
+    const params = new URLSearchParams({ limit: '250' })
+    if (pageInfo) {
+      params.set('page_info', pageInfo)
+    } else {
+      params.set('status',         'any')
+      params.set('created_at_min', ninetyDaysAgo)
+    }
 
     const res = await fetch(
       `https://${store}/admin/api/2024-01/orders.json?${params}`,
@@ -113,10 +115,7 @@ async function fetchShopifySalesBySku(): Promise<Map<string, number>> {
     )
     if (!res.ok) throw new Error(`Shopify orders fetch failed: ${res.status}`)
 
-    const data    = await res.json()
-    const orders  = data.orders ?? []
-
-    for (const order of orders) {
+    for (const order of (await res.json()).orders ?? []) {
       for (const item of order.line_items ?? []) {
         const sku = item.sku?.trim()
         const qty = item.quantity ?? 0
@@ -124,7 +123,6 @@ async function fetchShopifySalesBySku(): Promise<Map<string, number>> {
       }
     }
 
-    // Pagination via Link header
     const link = res.headers.get('Link') ?? ''
     const next = link.match(/<[^>]*page_info=([^>&"]+)[^>]*>;\s*rel="next"/)
     pageInfo   = next ? next[1] : null
@@ -135,21 +133,19 @@ async function fetchShopifySalesBySku(): Promise<Map<string, number>> {
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
-export async function GET() { return handler() }
+export async function GET()  { return handler() }
 export async function POST() { return handler() }
 
 async function handler() {
   const supabase = adminClient()
 
   try {
-    // Load active products
     const { data: products, error: prodErr } = await supabase
       .from('products')
       .select('id, asin, shopify_sku')
       .eq('is_active', true)
     if (prodErr) throw new Error(prodErr.message)
 
-    // Fetch sales data from both sources in parallel
     const [amazonResult, shopifyResult] = await Promise.allSettled([
       fetchAmazonSalesByAsin(),
       fetchShopifySalesBySku(),
@@ -160,7 +156,6 @@ async function handler() {
     const amazonError  = amazonResult.status === 'rejected'  ? String(amazonResult.reason) : null
     const shopifyError = shopifyResult.status === 'rejected' ? String(shopifyResult.reason) : null
 
-    // Combine and update
     let updated = 0
     for (const p of products ?? []) {
       const amazonQty  = p.asin        ? (amazonByAsin.get(p.asin)        ?? 0) : 0
@@ -168,19 +163,16 @@ async function handler() {
       const total      = amazonQty + shopifyQty
       if (total === 0) continue
 
-      await supabase
-        .from('products')
-        .update({ avg_90_day_sales: total })
-        .eq('id', p.id)
+      await supabase.from('products').update({ avg_90_day_sales: total }).eq('id', p.id)
       updated++
     }
 
     return NextResponse.json({
-      ok:             true,
-      updated_skus:   updated,
-      amazon_asins:   amazonByAsin.size,
-      shopify_skus:   shopifyBySku.size,
-      fetched_at:     new Date().toISOString(),
+      ok:           true,
+      updated_skus: updated,
+      amazon_asins: amazonByAsin.size,
+      shopify_skus: shopifyBySku.size,
+      fetched_at:   new Date().toISOString(),
       errors: { amazon: amazonError, shopify: shopifyError },
     })
 
