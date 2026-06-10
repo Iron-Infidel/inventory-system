@@ -13,7 +13,7 @@ const MARKETPLACE_ID = process.env.AMAZON_MARKETPLACE_ID ?? 'ATVPDKIKX0DER'
 let cachedToken: string | null = null
 let tokenExpiresAt = 0
 
-async function getAccessToken(): Promise<string> {
+export async function getAccessToken(): Promise<string> {
   if (cachedToken && Date.now() < tokenExpiresAt) return cachedToken
 
   const res = await fetch(LWA_TOKEN_URL, {

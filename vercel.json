@@ -1,6 +1,14 @@
 {
   "crons": [
     {
+      "path": "/api/inventory/sales-sync",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/inventory/sync",
+      "schedule": "0 9 * * *"
+    },
+    {
       "path": "/api/inventory/report",
       "schedule": "0 10 * * *"
     }
