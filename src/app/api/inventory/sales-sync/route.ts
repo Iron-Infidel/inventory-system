@@ -91,14 +91,17 @@ async function fetchAmazonSalesByAsin(): Promise<Map<string, number>> {
 
     const lines   = text.split('\n').filter(Boolean)
     const headers = lines[0].split('\t').map(h => h.trim().toLowerCase())
-    const asinIdx = headers.indexOf('asin')
-    const qtyIdx  = headers.findIndex(h => h.includes('quantity-purchased'))
+    const asinIdx   = headers.indexOf('asin')
+    const qtyIdx    = headers.findIndex(h => h === 'quantity' || h.includes('quantity-purchased'))
+    const statusIdx = headers.indexOf('order-status')
 
     if (asinIdx === -1 || qtyIdx === -1)
-      throw new Error(`Unexpected Amazon report columns: ${headers.slice(0, 12).join(' | ')}`)
+      throw new Error(`Unexpected Amazon report columns: ${headers.join(' | ')}`)
 
     for (const line of lines.slice(1)) {
-      const cols = line.split('\t')
+      const cols   = line.split('\t')
+      const status = statusIdx >= 0 ? cols[statusIdx]?.trim().toLowerCase() : ''
+      if (status === 'cancelled') continue
       const asin = cols[asinIdx]?.trim()
       const qty  = parseInt(cols[qtyIdx] ?? '0', 10) || 0
       if (asin) byAsin.set(asin, (byAsin.get(asin) ?? 0) + qty)
