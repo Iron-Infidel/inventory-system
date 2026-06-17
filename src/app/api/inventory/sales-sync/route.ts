@@ -61,10 +61,33 @@ async function fetchAmazonSalesByAsin(): Promise<Map<string, number>> {
   // Download + parse all 3, accumulate into one map
   const byAsin = new Map<string, number>()
   await Promise.all(docIds.map(async (docId) => {
-    const { url } = await (await fetch(`${BASE}/reports/2021-06-30/documents/${docId}`, {
+    const { url, compressionAlgorithm } = await (await fetch(`${BASE}/reports/2021-06-30/documents/${docId}`, {
       headers: { 'x-amz-access-token': token },
     })).json()
-    const text    = await (await fetch(url)).text()
+
+    const fileRes = await fetch(url)
+    let text: string
+    if (compressionAlgorithm === 'GZIP') {
+      const buffer = await fileRes.arrayBuffer()
+      const ds     = new DecompressionStream('gzip')
+      const writer = ds.writable.getWriter()
+      const reader = ds.readable.getReader()
+      writer.write(new Uint8Array(buffer))
+      writer.close()
+      const chunks: Uint8Array[] = []
+      let done = false
+      while (!done) {
+        const { value, done: d } = await reader.read()
+        if (value) chunks.push(value)
+        done = d
+      }
+      const merged = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0))
+      let offset = 0
+      for (const c of chunks) { merged.set(c, offset); offset += c.length }
+      text = new TextDecoder().decode(merged)
+    } else {
+      text = await fileRes.text()
+    }
 
     const lines   = text.split('\n').filter(Boolean)
     const headers = lines[0].split('\t').map(h => h.trim().toLowerCase())
